@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Entry point script for Athena Query Tool."""
+
+from athena_query_tool.cli import main
+
+if __name__ == '__main__':
+    exit(main())
