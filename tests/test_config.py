@@ -3,6 +3,7 @@
 from athena_query_tool.config import (
     AWSConfig,
     AthenaConfig,
+    CacheConfig,
     OutputConfig,
     QueryConfig,
     Config,
@@ -70,6 +71,7 @@ def test_config_creation():
     config = Config(
         aws=aws_config,
         athena=athena_config,
+        cache=CacheConfig(),
         output=output_config,
         queries=[query_config],
     )
@@ -103,6 +105,7 @@ def test_config_with_multiple_queries():
     config = Config(
         aws=aws_config,
         athena=athena_config,
+        cache=CacheConfig(),
         output=output_config,
         queries=queries,
     )
@@ -503,3 +506,330 @@ queries:
         assert config.output.file == "/tmp/output.json"
     finally:
         os.unlink(temp_path)
+
+
+# Additional edge case tests for task 2.7
+
+def test_load_config_empty_file():
+    """Test error handling for empty configuration file."""
+    config_content = ""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        # Empty YAML file results in None, which should fail validation
+        assert "yaml object/dictionary" in str(exc_info.value).lower() or "athena" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_not_a_dictionary():
+    """Test error handling when configuration file contains a list instead of dictionary."""
+    config_content = """
+- item1
+- item2
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "yaml object/dictionary" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_empty_database():
+    """Test error handling when database field is empty string."""
+    config_content = """
+athena:
+  database: ""
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+queries:
+  - name: query1
+    sql: SELECT 1
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "database" in str(exc_info.value).lower()
+        assert "non-empty" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_empty_workgroup():
+    """Test error handling when workgroup field is empty string."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: ""
+  output_location: s3://test-bucket/results/
+
+queries:
+  - name: query1
+    sql: SELECT 1
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "workgroup" in str(exc_info.value).lower()
+        assert "non-empty" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_empty_output_location():
+    """Test error handling when output_location field is empty string."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: ""
+
+queries:
+  - name: query1
+    sql: SELECT 1
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "output_location" in str(exc_info.value).lower()
+        assert "non-empty" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_empty_query_name():
+    """Test error handling when query name is empty string."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+queries:
+  - name: ""
+    sql: SELECT 1
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "name" in str(exc_info.value).lower()
+        assert "non-empty" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_empty_query_sql():
+    """Test error handling when query SQL is empty string."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+queries:
+  - name: query1
+    sql: ""
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "sql" in str(exc_info.value).lower()
+        assert "non-empty" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_queries_not_list():
+    """Test error handling when queries field is not a list."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+queries: "not a list"
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "queries" in str(exc_info.value).lower()
+        assert "list" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_query_not_dict():
+    """Test error handling when query item is not a dictionary."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+queries:
+  - "not a dictionary"
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "query at index 0" in str(exc_info.value).lower()
+        assert "dictionary" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_database_not_string():
+    """Test error handling when database field is not a string."""
+    config_content = """
+athena:
+  database: 123
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+queries:
+  - name: query1
+    sql: SELECT 1
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "database" in str(exc_info.value).lower()
+        assert "string" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_workgroup_not_string():
+    """Test error handling when workgroup field is not a string."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: 123
+  output_location: s3://test-bucket/results/
+
+queries:
+  - name: query1
+    sql: SELECT 1
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "workgroup" in str(exc_info.value).lower()
+        assert "string" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_output_location_not_string():
+    """Test error handling when output_location field is not a string."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: 123
+
+queries:
+  - name: query1
+    sql: SELECT 1
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+    
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+        
+        assert "output_location" in str(exc_info.value).lower()
+        assert "string" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_multiple_invalid_formats():
+    """Test error handling for various invalid output format values."""
+    invalid_formats = ["xml", "html", "pdf", "txt", "INVALID", "Table", "CSV", "JSON"]
+    
+    for invalid_format in invalid_formats:
+        config_content = f"""
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+output:
+  format: {invalid_format}
+
+queries:
+  - name: query1
+    sql: SELECT 1
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(config_content)
+            temp_path = f.name
+        
+        try:
+            with pytest.raises(ConfigurationError) as exc_info:
+                ConfigurationManager.load_config(temp_path)
+            
+            assert "invalid output format" in str(exc_info.value).lower()
+            assert invalid_format in str(exc_info.value)
+        finally:
+            os.unlink(temp_path)

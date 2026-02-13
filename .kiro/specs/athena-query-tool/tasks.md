@@ -11,20 +11,22 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
   - Set up requirements.txt with dependencies: boto3, PyYAML, tabulate (or prettytable), hypothesis (for testing)
   - Create main entry point script
   - Set up basic logging configuration
-  - _Requirements: All_
+  - Add .athena_cache/ to .gitignore
+  - _Requirements: All, 8.11_
 
-- [ ] 2. Implement configuration management
+- [x] 2. Implement configuration management
   - [x] 2.1 Create Config data models
-    - Define AWSConfig, AthenaConfig, OutputConfig, QueryConfig, and Config dataclasses
-    - _Requirements: 1.4, 1.5, 7.1, 7.4_
+    - Define AWSConfig, AthenaConfig, CacheConfig, OutputConfig, QueryConfig, and Config dataclasses
+    - Define CachedExecution dataclass for cache entries
+    - _Requirements: 1.4, 1.5, 7.1, 7.4, 8.8, 8.9, 8.10_
   
   - [x] 2.2 Implement ConfigurationManager class
     - Implement load_config() method to parse YAML files
     - Implement validation for required fields (database, workgroup, output_location, queries)
-    - Implement default value handling for optional fields (profile, region, output format)
+    - Implement default value handling for optional fields (profile, region, output format, cache settings)
     - Handle file not found errors with descriptive messages
     - Handle YAML syntax errors with location information
-    - _Requirements: 1.1, 1.2, 1.3, 1.6, 6.3, 7.5_
+    - _Requirements: 1.1, 1.2, 1.3, 1.6, 6.3, 7.5, 8.8, 8.9, 8.10_
   
   - [ ]* 2.3 Write property test for configuration parsing completeness
     - **Property 1: Configuration Parsing Completeness**
@@ -38,13 +40,17 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
     - **Property 18: Optional Field Defaults**
     - **Validates: Requirements 7.5**
   
-  - [ ]* 2.6 Write unit tests for configuration edge cases
+  - [ ]* 2.6 Write property test for cache configuration parsing
+    - **Property 25: Cache Configuration Parsing**
+    - **Validates: Requirements 8.8, 8.9, 8.10**
+  
+  - [x]* 2.7 Write unit tests for configuration edge cases
     - Test missing configuration file
     - Test invalid YAML syntax
     - Test invalid output format values
     - _Requirements: 1.2, 1.3_
 
-- [ ] 3. Implement AWS authentication
+- [x] 3. Implement AWS authentication
   - [x] 3.1 Create AuthenticationManager class
     - Implement get_session() method using boto3.Session
     - Implement credential resolution following AWS credential provider chain
@@ -58,7 +64,7 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
     - **Property 3: Credential Provider Chain Order**
     - **Validates: Requirements 2.6**
   
-  - [ ]* 3.3 Write unit tests for authentication scenarios
+  - [x]* 3.3 Write unit tests for authentication scenarios
     - Test environment variable authentication
     - Test profile-based authentication
     - Test missing credentials error handling
@@ -67,8 +73,38 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
 - [x] 4. Checkpoint - Ensure configuration and authentication work
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement retry logic
-  - [x] 5.1 Create RetryHandler class
+- [x] 5. Implement cache manager
+  - [x] 5.1 Create CacheManager class
+    - Implement __init__() to accept cache config and S3 client
+    - Implement _ensure_cache_directory() to create cache directory if missing
+    - Implement _get_cache_filename() to generate filename from execution ID
+    - Implement store_execution() to save cache entries as JSON files
+    - Implement get_cached_execution() to look up and validate cached entries
+    - Implement _is_cache_fresh() to check TTL validity
+    - Implement _validate_s3_result_exists() to check S3 object existence
+    - Handle cache file read/write errors gracefully
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.12_
+  
+  - [ ]* 5.2 Write property test for cache storage completeness
+    - **Property 22: Cache Storage Completeness**
+    - **Validates: Requirements 8.1**
+  
+  - [ ]* 5.3 Write property test for cache validation process
+    - **Property 23: Cache Validation Process**
+    - **Validates: Requirements 8.2, 8.3, 8.4**
+  
+  - [ ]* 5.4 Write unit tests for cache edge cases
+    - Test cache directory creation
+    - Test cache file corruption handling
+    - Test S3 validation failures
+    - Test TTL expiration
+    - _Requirements: 8.3, 8.4, 8.12_
+
+- [x] 6. Checkpoint - Ensure cache manager works
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 7. Implement retry logic
+  - [x] 7.1 Create RetryHandler class
     - Implement execute_with_retry() method with exponential backoff
     - Implement _is_transient_error() to classify errors
     - Support configurable max_attempts and base_delay
@@ -76,70 +112,77 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
     - Implement exponential backoff: delay = base_delay * (2 ** attempt)
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
   
-  - [ ]* 5.2 Write property test for transient error retry
+  - [ ]* 7.2 Write property test for transient error retry
     - **Property 6: Transient Error Retry**
     - **Validates: Requirements 4.1, 4.2**
   
-  - [ ]* 5.3 Write property test for exponential backoff
+  - [ ]* 7.3 Write property test for exponential backoff
     - **Property 7: Exponential Backoff**
     - **Validates: Requirements 4.3**
   
-  - [ ]* 5.4 Write property test for non-transient error immediate failure
+  - [ ]* 7.4 Write property test for non-transient error immediate failure
     - **Property 8: Non-Transient Error Immediate Failure**
     - **Validates: Requirements 4.4**
   
-  - [ ]* 5.5 Write property test for retry exhaustion
+  - [ ]* 7.5 Write property test for retry exhaustion
     - **Property 9: Retry Exhaustion**
     - **Validates: Requirements 4.5**
   
-  - [ ]* 5.6 Write property test for transient error classification
+  - [ ]* 7.6 Write property test for transient error classification
     - **Property 10: Transient Error Classification**
     - **Validates: Requirements 4.6**
   
-  - [ ]* 5.7 Write unit tests for retry edge cases
+  - [ ]* 7.7 Write unit tests for retry edge cases
     - Test maximum retry attempts exhaustion
     - Test immediate failure on non-transient errors
     - _Requirements: 4.4, 4.5_
 
-- [ ] 6. Implement query execution
-  - [x] 6.1 Create QueryResult data model
+- [x] 8. Implement query execution
+  - [x] 8.1 Create QueryResult data model
     - Define Column and QueryResult dataclasses
     - _Requirements: 3.5_
   
-  - [x] 6.2 Create QueryExecutor class
-    - Implement __init__() to accept Athena client and config
+  - [x] 8.2 Create QueryExecutor class with cache integration
+    - Implement __init__() to accept Athena client, S3 client, config, and optional cache manager
     - Implement _submit_query() to submit queries with database, workgroup, and S3 output location
     - Implement _wait_for_completion() to poll query status until terminal state
     - Implement _get_results() to retrieve result set
-    - Implement execute_query() to orchestrate submission, polling, and retrieval
+    - Implement execute_query() to orchestrate cache lookup, submission, polling, and retrieval
+    - Integrate cache manager: check cache before executing, store results after execution
     - Integrate RetryHandler for all AWS API calls
     - Handle query failures with Athena error messages
     - Support zero-row results
-    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 6.4_
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 6.4, 8.5, 8.6, 8.7_
   
-  - [ ]* 6.3 Write property test for query submission with configuration
+  - [ ]* 8.3 Write property test for query submission with configuration
     - **Property 4: Query Submission with Configuration**
     - **Validates: Requirements 3.1, 3.2, 3.3**
   
-  - [ ]* 6.4 Write property test for query polling until completion
+  - [ ]* 8.4 Write property test for query polling until completion
     - **Property 5: Query Polling Until Completion**
     - **Validates: Requirements 3.4, 3.5**
   
-  - [ ]* 6.5 Write property test for Athena query error propagation
+  - [ ]* 8.5 Write property test for cache-based execution decisions
+    - **Property 24: Cache-Based Execution Decisions**
+    - **Validates: Requirements 8.5, 8.6, 8.7**
+  
+  - [ ]* 8.6 Write property test for Athena query error propagation
     - **Property 16: Athena Query Error Propagation**
     - **Validates: Requirements 6.4**
   
-  - [ ]* 6.6 Write unit tests for query execution scenarios
+  - [ ]* 8.7 Write unit tests for query execution scenarios
     - Test successful query execution
     - Test query failure handling
     - Test zero-row results
-    - _Requirements: 3.6, 3.7_
+    - Test cache hit scenario
+    - Test cache miss scenario
+    - _Requirements: 3.6, 3.7, 8.5, 8.7_
 
-- [x] 7. Checkpoint - Ensure query execution works
+- [x] 9. Checkpoint - Ensure query execution works
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Implement result formatting
-  - [x] 8.1 Create ResultFormatter class
+- [x] 10. Implement result formatting
+  - [x] 10.1 Create ResultFormatter class
     - Implement format_as_table() for ASCII table output
     - Implement _format_value() to handle NULL values and various data types
     - Implement _truncate_value() for long values with ellipsis
@@ -147,7 +190,7 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
     - Use tabulate or prettytable library for table formatting
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
   
-  - [x] 8.2 Implement CSV file output
+  - [x] 10.2 Implement CSV file output
     - Implement write_to_csv() method using Python's csv module
     - Write column headers in first row
     - Represent NULL values as empty strings
@@ -156,7 +199,7 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
     - Handle file write errors with descriptive messages
     - _Requirements: 5.8, 5.9_
   
-  - [x] 8.3 Implement JSON file output
+  - [x] 10.3 Implement JSON file output
     - Implement write_to_json() method using Python's json module
     - Create JSON object with "columns", "rows", and "row_count" fields
     - Represent NULL values as JSON null
@@ -164,35 +207,35 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
     - Handle file write errors with descriptive messages
     - _Requirements: 5.8, 5.9_
   
-  - [ ]* 8.4 Write property test for result formatting with headers
+  - [ ]* 10.4 Write property test for result formatting with headers
     - **Property 11: Result Formatting with Headers**
     - **Validates: Requirements 5.1, 5.2**
   
-  - [ ]* 8.5 Write property test for NULL value display
+  - [ ]* 10.5 Write property test for NULL value display
     - **Property 12: NULL Value Display**
     - **Validates: Requirements 5.4**
   
-  - [ ]* 8.6 Write property test for value truncation
+  - [ ]* 10.6 Write property test for value truncation
     - **Property 13: Value Truncation**
     - **Validates: Requirements 5.6**
   
-  - [ ]* 8.7 Write property test for data type formatting
+  - [ ]* 10.7 Write property test for data type formatting
     - **Property 14: Data Type Formatting**
     - **Validates: Requirements 5.7**
   
-  - [ ]* 8.8 Write property test for CSV file output format
+  - [ ]* 10.8 Write property test for CSV file output format
     - **Property 19: CSV File Output Format**
     - **Validates: Requirements 5.8, 5.9**
   
-  - [ ]* 8.9 Write property test for JSON file output format
+  - [ ]* 10.9 Write property test for JSON file output format
     - **Property 20: JSON File Output Format**
     - **Validates: Requirements 5.8, 5.9**
   
-  - [ ]* 8.10 Write property test for file output success
+  - [ ]* 10.10 Write property test for file output success
     - **Property 21: File Output Success**
     - **Validates: Requirements 5.8**
   
-  - [ ]* 8.11 Write unit tests for result formatting edge cases
+  - [ ]* 10.11 Write unit tests for result formatting edge cases
     - Test zero-row results display
     - Test very long column values
     - Test CSV output with special characters
@@ -200,36 +243,38 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
     - Test file write permission errors
     - _Requirements: 5.5, 5.6_
 
-- [ ] 9. Implement CLI entry point and main orchestration
-  - [x] 9.1 Create main CLI script
+- [x] 11. Implement CLI entry point and main orchestration
+  - [x] 11.1 Create main CLI script with cache integration
     - Parse command-line arguments (config file path, optional debug flag)
     - Initialize ConfigurationManager and load configuration
     - Initialize AuthenticationManager and create boto3 session
-    - Create Athena client from session
-    - Initialize QueryExecutor with client and configuration
+    - Create Athena client and S3 client from session
+    - Initialize CacheManager if caching is enabled
+    - Initialize QueryExecutor with clients, configuration, and cache manager
     - Initialize ResultFormatter
     - Loop through queries in configuration and execute each
     - Format results based on output configuration (table, csv, or json)
     - Display results to stdout or write to file based on configuration
     - Handle all error categories with appropriate exit codes
-    - _Requirements: 6.1, 6.2, 6.5, 6.6_
+    - _Requirements: 6.1, 6.2, 6.5, 6.6, 8.1, 8.5, 8.6, 8.7_
   
-  - [ ]* 9.2 Write property test for AWS error message propagation
+  - [ ]* 11.2 Write property test for AWS error message propagation
     - **Property 15: AWS Error Message Propagation**
     - **Validates: Requirements 6.2**
   
-  - [ ]* 9.3 Write property test for exit code behavior
+  - [ ]* 11.3 Write property test for exit code behavior
     - **Property 17: Exit Code Behavior**
     - **Validates: Requirements 6.5, 6.6**
   
-  - [ ]* 9.4 Write integration tests
+  - [ ]* 11.4 Write integration tests
     - Test end-to-end flow with mocked Athena client
     - Test multiple queries execution
     - Test different output formats (table, CSV, JSON)
     - Test error handling and exit codes
+    - Test caching behavior end-to-end
     - _Requirements: All_
 
-- [x] 10. Final checkpoint - Ensure all tests pass
+- [x] 12. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
@@ -241,3 +286,4 @@ This implementation plan breaks down the AWS Athena Query Tool into discrete cod
 - Unit tests validate specific examples and edge cases
 - All AWS API calls should be wrapped with RetryHandler
 - Use dependency injection to facilitate testing (pass clients and handlers as parameters)
+- Cache directory (.athena_cache/) is excluded from version control via .gitignore

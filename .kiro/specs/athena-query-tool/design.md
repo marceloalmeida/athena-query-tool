@@ -28,10 +28,18 @@ The system follows a layered architecture:
 └──────────────┬──────────────────────┘
                │
 ┌──────────────▼──────────────────────┐
+│       Cache Manager                 │
+│  - Check cache for query            │
+│  - Validate cache freshness         │
+│  - Store/update cache entries       │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
 │       Query Executor                │
 │  - Submit queries to Athena         │
 │  - Poll for completion              │
 │  - Retrieve results                 │
+│  - Integrate with cache             │
 └──────────────┬──────────────────────┘
                │
 ┌──────────────▼──────────────────────┐
@@ -89,6 +97,11 @@ athena:
   workgroup: primary
   output_location: s3://my-bucket/athena-results/
 
+cache:
+  enabled: true  # Optional, default: false
+  ttl_seconds: 3600  # Optional, default: 3600 (1 hour)
+  directory: .athena_cache/  # Optional, default: .athena_cache/
+
 output:
   format: table  # Options: table, csv, json
   file: optional_output_file_path  # Only used when format is csv or json
@@ -128,20 +141,98 @@ class AuthenticationManager:
 3. AWS credentials file (~/.aws/credentials)
 4. IAM role (when running on AWS infrastructure)
 
-### 3. Query Executor
+### 3. Cache Manager
 
-**Responsibility:** Execute queries against Athena and retrieve results.
+**Responsibility:** Manage local caching of query execution IDs and results to avoid re-executing expensive queries.
+
+**Interface:**
+```python
+class CacheManager:
+    def __init__(self, cache_config: CacheConfig, s3_client):
+        """
+        Initialize cache manager.
+        
+        Args:
+            cache_config: Cache configuration (directory, TTL, enabled flag)
+            s3_client: boto3 S3 client for validating cached results
+        """
+        pass
+    
+    def get_cached_execution(self, query_sql: str) -> Optional[CachedExecution]:
+        """
+        Get cached execution for a query if valid and fresh.
+        
+        Args:
+            query_sql: SQL query string (used to look up cache)
+            
+        Returns:
+            CachedExecution if valid cache exists, None otherwise
+        """
+        pass
+    
+    def store_execution(self, query_sql: str, execution_id: str, s3_location: str) -> None:
+        """
+        Store query execution in cache.
+        
+        Args:
+            query_sql: SQL query string
+            execution_id: Athena execution ID (used as cache key)
+            s3_location: S3 location of query results
+        """
+        pass
+    
+    def _is_cache_fresh(self, timestamp: float, ttl_seconds: int) -> bool:
+        """Check if cached entry is within TTL."""
+        pass
+    
+    def _validate_s3_result_exists(self, s3_location: str) -> bool:
+        """Validate that S3 result file still exists."""
+        pass
+    
+    def _ensure_cache_directory(self) -> None:
+        """Create cache directory if it doesn't exist."""
+        pass
+    
+    def _get_cache_filename(self, execution_id: str) -> str:
+        """Get cache filename from execution ID."""
+        pass
+```
+
+**Cache Storage Format:**
+
+The cache will be stored as JSON files in the cache directory, with one file per cached query. The filename will be the Athena execution ID to uniquely identify each cached query result.
+
+```json
+{
+  "query_sql": "SELECT * FROM my_table WHERE id = 123",
+  "execution_id": "abc123-def456-ghi789",
+  "timestamp": 1234567890.123,
+  "s3_location": "s3://my-bucket/athena-results/abc123-def456-ghi789.csv",
+  "ttl_seconds": 3600
+}
+```
+
+**Cache Validation Logic:**
+1. Look up cache files and find one matching the query SQL
+2. Parse cache file and extract timestamp and execution ID
+3. Validate cache is fresh: `current_time - timestamp < ttl_seconds`
+4. Validate S3 result exists by checking S3 object existence
+5. Return cached execution ID if both validations pass, None otherwise
+
+### 4. Query Executor
+
+**Responsibility:** Execute queries against Athena and retrieve results, with cache integration.
 
 **Interface:**
 ```python
 class QueryExecutor:
-    def __init__(self, athena_client, config: AthenaConfig):
-        """Initialize with boto3 Athena client and configuration."""
+    def __init__(self, athena_client, s3_client, config: AthenaConfig, cache_manager: Optional[CacheManager] = None):
+        """Initialize with boto3 Athena client, S3 client, configuration, and optional cache manager."""
         pass
     
     def execute_query(self, sql: str) -> QueryResult:
         """
-        Execute SQL query and return results.
+        Execute SQL query and return results, using cache when available.
         
         Args:
             sql: SQL query string
@@ -167,7 +258,7 @@ class QueryExecutor:
         pass
 ```
 
-### 4. Retry Handler
+### 5. Retry Handler
 
 **Responsibility:** Implement retry logic with exponential backoff for transient failures.
 
@@ -215,7 +306,7 @@ class RetryHandler:
 - Exponential backoff: delay = base_delay * (2 ** attempt)
 - Example: 1s, 2s, 4s for 3 attempts with base_delay=1.0
 
-### 5. Result Formatter
+### 6. Result Formatter
 
 **Responsibility:** Format query results as ASCII table or write to CSV/JSON files.
 
@@ -309,6 +400,12 @@ class AthenaConfig:
     output_location: str
 
 @dataclass
+class CacheConfig:
+    enabled: bool = False
+    ttl_seconds: int = 3600
+    directory: str = ".athena_cache/"
+
+@dataclass
 class OutputConfig:
     format: str = "table"  # Options: "table", "csv", "json"
     file: Optional[str] = None  # File path for csv/json output
@@ -322,6 +419,7 @@ class QueryConfig:
 class Config:
     aws: AWSConfig
     athena: AthenaConfig
+    cache: CacheConfig
     output: OutputConfig
     queries: List[QueryConfig]
 ```
@@ -338,6 +436,17 @@ class QueryResult:
     columns: List[Column]
     rows: List[List[Any]]
     row_count: int
+```
+
+### CachedExecution
+```python
+@dataclass
+class CachedExecution:
+    query_sql: str
+    execution_id: str
+    timestamp: float
+    s3_location: str
+    ttl_seconds: int
 ```
 
 ## Correctness Properties
@@ -471,6 +580,30 @@ A property is a characteristic or behavior that should hold true across all vali
 
 **Validates: Requirements 5.8**
 
+### Property 22: Cache Storage Completeness
+
+*For any* query execution when caching is enabled, the Cache Manager should store all required fields (execution ID, query SQL, timestamp, and S3 result location) in the cache entry.
+
+**Validates: Requirements 8.1**
+
+### Property 23: Cache Validation Process
+
+*For any* cached entry, the Cache Manager should perform both freshness validation (based on TTL) and S3 existence validation before considering the cache valid.
+
+**Validates: Requirements 8.2, 8.3, 8.4**
+
+### Property 24: Cache-Based Execution Decisions
+
+*For any* query when caching is enabled, the Query Executor should reuse the cached execution ID if the cache is valid and fresh, execute a new query and update the cache if the cache is invalid or stale, and execute a new query and create a cache entry if no cache exists.
+
+**Validates: Requirements 8.5, 8.6, 8.7**
+
+### Property 25: Cache Configuration Parsing
+
+*For any* configuration file with cache settings, the Configuration Manager should correctly parse cache_enabled, cache_ttl_seconds (defaulting to 3600), and cache_directory (defaulting to .athena_cache/).
+
+**Validates: Requirements 8.8, 8.9, 8.10**
+
 ## Error Handling
 
 ### Error Categories
@@ -505,11 +638,18 @@ A property is a characteristic or behavior that should hold true across all vali
    - Disk full or I/O errors
    - Invalid output format specified
 
+6. **Cache Errors**
+   - Cache directory creation failure
+   - Cache file read/write errors
+   - Invalid cache file format
+   - S3 validation errors (transient)
+
 ### Error Handling Strategy
 
 - All errors should be caught at the appropriate layer
 - Error messages should be descriptive and actionable
 - Stack traces should only be shown in debug mode
+- Cache errors should not prevent query execution (fail gracefully)
 - Exit codes should indicate error category:
   - 0: Success
   - 1: Configuration error
@@ -517,6 +657,7 @@ A property is a characteristic or behavior that should hold true across all vali
   - 3: Query execution error
   - 4: AWS service error
   - 5: File output error
+  - 6: Cache error (non-fatal)
 
 ## Testing Strategy
 

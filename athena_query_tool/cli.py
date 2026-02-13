@@ -78,11 +78,23 @@ def main() -> int:
         athena_client = session.client('athena')
         logger.debug("Athena client created")
         
+        # Create S3 client from session
+        s3_client = session.client('s3')
+        logger.debug("S3 client created")
+        
+        # Initialize CacheManager if caching is enabled
+        cache_manager = None
+        if config.cache.enabled:
+            from .cache import CacheManager
+            cache_manager = CacheManager(config.cache, s3_client)
+            logger.info(f"Cache enabled (TTL: {config.cache.ttl_seconds}s, directory: {config.cache.directory})")
+        
         # Initialize RetryHandler
         retry_handler = RetryHandler()
         
-        # Initialize QueryExecutor with client and configuration
-        executor = QueryExecutor(athena_client, config.athena, retry_handler)
+        # Initialize QueryExecutor with client, configuration, and cache
+        executor = QueryExecutor(athena_client, config.athena, retry_handler,
+                                 s3_client=s3_client, cache_manager=cache_manager)
         logger.debug("QueryExecutor initialized")
         
         # Initialize ResultFormatter

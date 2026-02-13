@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch, MagicMock
 import pytest
 
 from athena_query_tool.cli import main
-from athena_query_tool.config import Config, AWSConfig, AthenaConfig, OutputConfig, QueryConfig
+from athena_query_tool.config import Config, AWSConfig, AthenaConfig, CacheConfig, OutputConfig, QueryConfig
 from athena_query_tool.executor import QueryResult, Column
 from athena_query_tool.exceptions import (
     ConfigurationError,
@@ -26,6 +26,7 @@ def sample_config():
             workgroup='primary',
             output_location='s3://test-bucket/results/'
         ),
+        cache=CacheConfig(),
         output=OutputConfig(format='table', file=None),
         queries=[
             QueryConfig(name='test_query', sql='SELECT * FROM test_table')

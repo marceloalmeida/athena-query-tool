@@ -25,6 +25,14 @@ class AthenaConfig:
 
 
 @dataclass
+class CacheConfig:
+    """Cache configuration settings."""
+    enabled: bool = False
+    ttl_seconds: int = 3600
+    directory: str = ".athena_cache/"
+
+
+@dataclass
 class OutputConfig:
     """Output format configuration."""
     format: str = "table"  # Options: "table", "csv", "json"
@@ -39,10 +47,21 @@ class QueryConfig:
 
 
 @dataclass
+class CachedExecution:
+    """Cached query execution information."""
+    query_sql: str
+    execution_id: str
+    timestamp: float
+    s3_location: str
+    ttl_seconds: int
+
+
+@dataclass
 class Config:
     """Main configuration object."""
     aws: AWSConfig
     athena: AthenaConfig
+    cache: CacheConfig
     output: OutputConfig
     queries: List[QueryConfig]
 
@@ -92,12 +111,14 @@ class ConfigurationManager:
         try:
             aws_config = ConfigurationManager._parse_aws_config(data)
             athena_config = ConfigurationManager._parse_athena_config(data)
+            cache_config = ConfigurationManager._parse_cache_config(data)
             output_config = ConfigurationManager._parse_output_config(data)
             queries = ConfigurationManager._parse_queries(data)
             
             return Config(
                 aws=aws_config,
                 athena=athena_config,
+                cache=cache_config,
                 output=output_config,
                 queries=queries
             )
@@ -145,6 +166,22 @@ class ConfigurationManager:
             database=database,
             workgroup=workgroup,
             output_location=output_location
+        )
+    
+    @staticmethod
+    def _parse_cache_config(data: dict) -> CacheConfig:
+        """Parse cache configuration section."""
+        cache_data = data.get('cache', {})
+        
+        # Optional fields with defaults
+        enabled = cache_data.get('enabled', False)
+        ttl_seconds = cache_data.get('ttl_seconds', 3600)
+        directory = cache_data.get('directory', '.athena_cache/')
+        
+        return CacheConfig(
+            enabled=enabled,
+            ttl_seconds=ttl_seconds,
+            directory=directory
         )
     
     @staticmethod

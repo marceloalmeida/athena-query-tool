@@ -1,12 +1,15 @@
 """Query execution against AWS Athena."""
 
+import logging
 import time
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any, List, Optional
 
 from .config import AthenaConfig
 from .exceptions import QueryExecutionError
 from .retry import RetryHandler
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,7 +30,8 @@ class QueryResult:
 class QueryExecutor:
     """Executes queries against AWS Athena and retrieves results."""
     
-    def __init__(self, athena_client, config: AthenaConfig, retry_handler: RetryHandler = None):
+    def __init__(self, athena_client, config: AthenaConfig, retry_handler: RetryHandler = None,
+                 s3_client=None, cache_manager=None):
         """
         Initialize QueryExecutor.
         
@@ -35,15 +39,19 @@ class QueryExecutor:
             athena_client: Boto3 Athena client
             config: Athena configuration settings
             retry_handler: Optional RetryHandler instance (creates default if not provided)
+            s3_client: Optional boto3 S3 client (needed for cache integration)
+            cache_manager: Optional CacheManager instance for query result caching
         """
         self.athena_client = athena_client
         self.config = config
         self.retry_handler = retry_handler or RetryHandler()
+        self.s3_client = s3_client
+        self.cache_manager = cache_manager
         self.poll_interval = 1.0  # Poll every 1 second
     
     def execute_query(self, sql: str) -> QueryResult:
         """
-        Execute SQL query and return results.
+        Execute SQL query and return results, using cache when available.
         
         Args:
             sql: SQL query string
@@ -54,6 +62,13 @@ class QueryExecutor:
         Raises:
             QueryExecutionError: If query fails
         """
+        # Check cache first
+        if self.cache_manager:
+            cached = self.cache_manager.get_cached_execution(sql)
+            if cached:
+                logger.info(f"Cache hit for query, reusing execution ID: {cached.execution_id}")
+                return self._get_results(cached.execution_id)
+        
         # Submit the query
         execution_id = self._submit_query(sql)
         
@@ -65,6 +80,12 @@ class QueryExecutor:
             # Get error information
             error_message = self._get_error_message(execution_id)
             raise QueryExecutionError(f"Query failed: {error_message}")
+        
+        # Store in cache after successful execution
+        if self.cache_manager:
+            s3_location = f"{self.config.output_location.rstrip('/')}/{execution_id}.csv"
+            self.cache_manager.store_execution(sql, execution_id, s3_location)
+            logger.info(f"Cached execution ID: {execution_id}")
         
         # Retrieve and return results
         return self._get_results(execution_id)

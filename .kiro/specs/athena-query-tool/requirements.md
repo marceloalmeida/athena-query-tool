@@ -12,6 +12,7 @@ This document specifies the requirements for an AWS Athena Query Tool that execu
 - **Result_Formatter**: The component that formats query results into ASCII table format
 - **Authentication_Manager**: The component that handles AWS credential resolution
 - **Retry_Handler**: The component that implements retry logic for transient failures
+- **Cache_Manager**: The component that manages local caching of query execution IDs and results
 
 ## Requirements
 
@@ -108,3 +109,22 @@ This document specifies the requirements for an AWS Athena Query Tool that execu
 3. WHEN multiple queries are specified, THE Configuration_File SHALL allow naming each query
 4. THE Configuration_File SHALL have a clear schema that is easy to understand
 5. WHEN optional fields are omitted, THE Athena_Query_Tool SHALL use sensible defaults
+
+### Requirement 8: Query Result Caching
+
+**User Story:** As a user, I want query results to be cached locally, so that I can avoid re-executing expensive queries when the results are still fresh.
+
+#### Acceptance Criteria
+
+1. WHEN caching is enabled and a query is executed, THE Cache_Manager SHALL store the execution ID, query SQL, timestamp, and S3 result location locally
+2. WHEN a query is submitted and caching is enabled, THE Cache_Manager SHALL check if a cached entry exists for that query SQL
+3. WHEN a cached entry exists, THE Cache_Manager SHALL validate if the execution ID still exists on the S3 results bucket
+4. WHEN a cached entry exists, THE Cache_Manager SHALL validate if the cached data is fresh based on the configured TTL value
+5. WHEN a cached entry is valid and fresh, THE Query_Executor SHALL reuse the cached execution ID instead of executing a new query
+6. WHEN a cached entry is invalid or stale, THE Query_Executor SHALL execute a new query and update the cache
+7. WHEN no cached entry exists, THE Query_Executor SHALL execute a new query and create a cache entry
+8. THE Configuration_File SHALL support cache_enabled boolean to enable or disable caching
+9. THE Configuration_File SHALL support cache_ttl_seconds to configure freshness duration with a default of 3600 seconds
+10. THE Configuration_File SHALL support cache_directory to specify local cache storage location with a default of .athena_cache/
+11. THE cache directory SHALL be excluded from version control by adding it to .gitignore
+12. WHEN the cache directory does not exist, THE Cache_Manager SHALL create it automatically
