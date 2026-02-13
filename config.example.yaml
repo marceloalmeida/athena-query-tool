@@ -4,7 +4,7 @@
 aws:
   # Optional: AWS profile name from ~/.aws/credentials
   # If not specified, uses default credential chain
-  # profile: talkdesk-reporting/SRE
+  # profile: default
   
   # AWS region
   region: us-east-1
@@ -12,13 +12,13 @@ aws:
 # Athena configuration
 athena:
   # Database name in Athena
-  database: athenacurcfn_tdcur
+  database: default
   
   # Workgroup name (use 'primary' for default)
   workgroup: primary
   
   # S3 location for query results
-  output_location: s3://aws-athena-query-results-us-east-1-923291307273/ 
+  output_location: s3://aws-athena-query-results-us-east-1-example/ 
 
 # Cache configuration
 cache:
@@ -44,109 +44,3 @@ queries:
    - name: sample_query
      sql: |
        SELECT current_timestamp
-  
-   - name: Databricks
-     sql: |
-       /* Refactored QuickSight Query 
-          - Simplified column names
-          - Replaced nested subqueries with CTEs
-          - Centralized Cost Logic 
-       */
-       
-       WITH raw_data AS (
-           SELECT 
-               "line_item_product_code", 
-               "line_item_usage_type", 
-               "pricing_unit", 
-               "line_item_usage_start_date",
-               /* Centralized Cost Logic: 
-                  Calculates the effective cost based on line item type 
-                  (Savings Plans, RIs, Discounts, etc.)
-               */
-               CASE 
-                   WHEN "line_item_line_item_type" = 'SavingsPlanCoveredUsage' 
-                       THEN "savings_plan_savings_plan_effective_cost" 
-                   WHEN "line_item_line_item_type" = 'SavingsPlanRecurringFee' 
-                       THEN ("savings_plan_total_commitment_to_date" - "savings_plan_used_commitment") 
-                   WHEN "line_item_line_item_type" = 'SavingsPlanNegation' 
-                       THEN 0 
-                   WHEN "line_item_line_item_type" = 'SavingsPlanUpfrontFee' 
-                       THEN 0 
-                   WHEN "line_item_line_item_type" = 'DiscountedUsage' 
-                       THEN "reservation_effective_cost" 
-                   WHEN "line_item_line_item_type" = 'RIFee' 
-                       THEN ("reservation_unused_amortized_upfront_fee_for_billing_period" + "reservation_unused_recurring_fee") 
-                   WHEN "line_item_line_item_type" = 'Fee' AND "reservation_reservation_a_r_n" <> '' 
-                       THEN 0 
-                   ELSE "line_item_unblended_cost" 
-               END AS "calculated_cost"
-           FROM "AwsDataCatalog"."athenacurcfn_tdcur"."cur"
-           WHERE 
-               -- Filter: Previous Month through Current Month
-               "line_item_usage_start_date" >= date_trunc('month', CAST(current_timestamp - interval '1' MONTH AS TIMESTAMP)) 
-               AND "line_item_usage_start_date" < date_trunc('month', CAST(date_trunc('month', CAST(current_timestamp + interval '1' MONTH AS TIMESTAMP)) - interval '1' SECOND AS TIMESTAMP)) 
-               -- Filter: Specific Account ID
-               AND "line_item_usage_account_id" IN ('213127804285')
-       ),
-       
-       monthly_aggregation AS (
-           SELECT 
-               "line_item_product_code" AS "product_code", 
-               "line_item_usage_type" AS "usage_type", 
-               "pricing_unit", 
-               date_trunc('month', CAST("line_item_usage_start_date" AS TIMESTAMP)) AS "month_date", 
-               COUNT(*) AS "record_count", 
-               SUM("calculated_cost") AS "total_cost"
-           FROM raw_data
-           GROUP BY 
-               1, 2, 3, 4
-       ),
-       
-       ranking_calculations AS (
-           SELECT 
-               *,
-               /* Calculating subtotals for ranking purposes 
-                  (Replaces $TOTAL_OVER_1, $TOTAL_OVER_2, etc.)
-               */
-               SUM("total_cost") OVER (PARTITION BY "usage_type") AS "subtotal_usage_type",
-               SUM("total_cost") OVER (PARTITION BY "usage_type", "product_code") AS "subtotal_product",
-               SUM("total_cost") OVER (PARTITION BY "usage_type", "product_code", "pricing_unit") AS "subtotal_unit"
-           FROM monthly_aggregation
-       ),
-       
-       final_ranking AS (
-           SELECT 
-               *,
-               -- Rank 4: Complex sort by subtotals
-               DENSE_RANK() OVER (
-                   ORDER BY 
-                       "subtotal_usage_type" DESC, 
-                       "usage_type" NULLS FIRST, 
-                       "subtotal_product" DESC, 
-                       "product_code" NULLS FIRST, 
-                       "subtotal_unit" DESC, 
-                       "pricing_unit" NULLS FIRST
-               ) AS "rank_row",
-               -- Rank 5: Sort by date
-               DENSE_RANK() OVER (
-                   ORDER BY "month_date" NULLS FIRST
-               ) AS "rank_col"
-           FROM ranking_calculations
-       )
-       
-       SELECT 
-           "product_code" AS "Product Code", 
-           "usage_type" AS "Usage Type", 
-           "pricing_unit" AS "Pricing Unit", 
-           "month_date" AS "Month", 
-           "record_count" AS "Count", 
-           "total_cost" AS "Total Cost", 
-           "rank_row" - 1 AS "Row Index", 
-           "rank_col" - 1 AS "Column Index"
-       FROM final_ranking
-       WHERE 
-           "rank_row" <= 500 
-           AND "rank_col" <= 100
-       ORDER BY 
-           "rank_row", 
-           "rank_col"
