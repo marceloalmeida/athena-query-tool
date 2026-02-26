@@ -1,7 +1,7 @@
 """Configuration management for Athena Query Tool."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 import yaml
@@ -58,6 +58,12 @@ class CachedExecution:
 
 
 @dataclass
+class QueryPrefixConfig:
+    """Query prefix configuration settings."""
+    tool_name: str = "athena-query-tool"
+
+
+@dataclass
 class Config:
     """Main configuration object."""
     aws: AWSConfig
@@ -65,6 +71,7 @@ class Config:
     cache: CacheConfig
     output: OutputConfig
     queries: List[QueryConfig]
+    query_prefix: QueryPrefixConfig = field(default_factory=QueryPrefixConfig)
 
 
 class ConfigurationManager:
@@ -115,13 +122,15 @@ class ConfigurationManager:
             cache_config = ConfigurationManager._parse_cache_config(data)
             output_config = ConfigurationManager._parse_output_config(data)
             queries = ConfigurationManager._parse_queries(data)
+            query_prefix_config = ConfigurationManager._parse_query_prefix_config(data)
             
             return Config(
                 aws=aws_config,
                 athena=athena_config,
                 cache=cache_config,
                 output=output_config,
-                queries=queries
+                queries=queries,
+                query_prefix=query_prefix_config
             )
         except KeyError as e:
             raise ConfigurationError(f"Missing required configuration field: {str(e)}") from e
@@ -244,3 +253,28 @@ class ConfigurationManager:
             queries.append(QueryConfig(name=name, sql=sql, skip=skip))
         
         return queries
+
+    @staticmethod
+    def _parse_query_prefix_config(data: dict) -> QueryPrefixConfig:
+        """Parse query prefix configuration section."""
+        prefix_data = data.get('query_prefix')
+
+        if prefix_data is None:
+            return QueryPrefixConfig()
+
+        if not isinstance(prefix_data, dict):
+            raise ConfigurationError("Field 'query_prefix' must be an object/dictionary")
+
+        if 'tool_name' not in prefix_data:
+            return QueryPrefixConfig()
+
+        tool_name = prefix_data['tool_name']
+
+        if not isinstance(tool_name, str):
+            raise ConfigurationError("Field 'query_prefix.tool_name' must be a string")
+
+        if tool_name == "":
+            raise ConfigurationError("Field 'query_prefix.tool_name' must be a non-empty string")
+
+        return QueryPrefixConfig(tool_name=tool_name)
+

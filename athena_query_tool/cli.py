@@ -94,7 +94,8 @@ def main() -> int:
         
         # Initialize QueryExecutor with client, configuration, and cache
         executor = QueryExecutor(athena_client, config.athena, retry_handler,
-                                 s3_client=s3_client, cache_manager=cache_manager)
+                                 s3_client=s3_client, cache_manager=cache_manager,
+                                 query_prefix_config=config.query_prefix)
         logger.debug("QueryExecutor initialized")
         
         # Initialize ResultFormatter
@@ -111,7 +112,7 @@ def main() -> int:
             
             try:
                 # Execute query
-                result = executor.execute_query(query_config.sql)
+                result = executor.execute_query(query_config.sql, query_name=query_config.name)
                 logger.info(f"Query '{query_config.name}' completed successfully: {result.row_count} rows returned")
                 
                 # Format results based on output configuration

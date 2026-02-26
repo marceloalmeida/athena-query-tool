@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-from .config import AthenaConfig
+from .config import AthenaConfig, QueryPrefixConfig
 from .exceptions import QueryExecutionError
 from .retry import RetryHandler
 
@@ -31,7 +31,8 @@ class QueryExecutor:
     """Executes queries against AWS Athena and retrieves results."""
     
     def __init__(self, athena_client, config: AthenaConfig, retry_handler: RetryHandler = None,
-                 s3_client=None, cache_manager=None):
+                 s3_client=None, cache_manager=None,
+                 query_prefix_config: QueryPrefixConfig = None):
         """
         Initialize QueryExecutor.
         
@@ -41,20 +42,37 @@ class QueryExecutor:
             retry_handler: Optional RetryHandler instance (creates default if not provided)
             s3_client: Optional boto3 S3 client (needed for cache integration)
             cache_manager: Optional CacheManager instance for query result caching
+            query_prefix_config: Optional QueryPrefixConfig for SQL comment prefix
         """
         self.athena_client = athena_client
         self.config = config
         self.retry_handler = retry_handler or RetryHandler()
         self.s3_client = s3_client
         self.cache_manager = cache_manager
+        self.query_prefix_config = query_prefix_config or QueryPrefixConfig()
         self.poll_interval = 1.0  # Poll every 1 second
     
-    def execute_query(self, sql: str) -> QueryResult:
+    def _build_prefix(self, query_name: Optional[str] = None) -> str:
+        """
+        Build the SQL comment prefix string.
+
+        Args:
+            query_name: Optional query name to include in the prefix
+
+        Returns:
+            SQL comment prefix string
+        """
+        if query_name:
+            return f"-- [{self.query_prefix_config.tool_name}] query_name={query_name}\n"
+        return f"-- [{self.query_prefix_config.tool_name}]\n"
+
+    def execute_query(self, sql: str, query_name: Optional[str] = None) -> QueryResult:
         """
         Execute SQL query and return results, using cache when available.
         
         Args:
             sql: SQL query string
+            query_name: Optional query name to include in the comment prefix
             
         Returns:
             QueryResult with columns and rows
@@ -62,16 +80,19 @@ class QueryExecutor:
         Raises:
             QueryExecutionError: If query fails
         """
-        # Check cache first
+        # Check cache first (using original SQL without prefix)
         if self.cache_manager:
             cached = self.cache_manager.get_cached_execution(sql)
             if cached:
                 logger.info(f"Cache hit for query, reusing execution ID: {cached.execution_id}")
                 return self._get_results(cached.execution_id)
         
-        # Submit the query
-        execution_id = self._submit_query(sql)
-        
+        # Build prefixed SQL for submission
+        prefixed_sql = self._build_prefix(query_name) + sql
+
+        # Submit the query with prefix
+        execution_id = self._submit_query(prefixed_sql)
+
         # Wait for completion
         final_status = self._wait_for_completion(execution_id)
         

@@ -80,7 +80,7 @@ def test_main_success_table_output(sample_config, sample_result):
                         # Verify
                         assert exit_code == 0
                         assert 'test_query' in captured_output.getvalue()
-                        mock_executor.execute_query.assert_called_once_with('SELECT * FROM test_table')
+                        mock_executor.execute_query.assert_called_once_with('SELECT * FROM test_table', query_name='test_query')
 
 
 def test_main_success_csv_output(sample_config, sample_result, tmp_path):

@@ -50,6 +50,7 @@ def create_app(config_path: str) -> Flask:
         retry_handler=retry_handler,
         s3_client=s3_client,
         cache_manager=cache_manager,
+        query_prefix_config=config.query_prefix,
     )
 
     # Store instances on app for use in route handlers
