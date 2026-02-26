@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Athena Query Tool</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Athena Query Tool</h1>
+    </header>
+
+    <main>
+        <!-- Configuration Panel -->
+        <section id="config-panel" aria-label="Connection Configuration">
+            <h2>Configuration</h2>
+            <dl>
+                <dt>Region</dt>
+                <dd id="config-region">—</dd>
+                <dt>Database</dt>
+                <dd id="config-database">—</dd>
+                <dt>Workgroup</dt>
+                <dd id="config-workgroup">—</dd>
+            </dl>
+        </section>
+
+        <!-- Query Editor -->
+        <section id="query-editor" aria-label="Query Editor">
+            <h2>Query</h2>
+            <label for="query-input" class="sr-only">SQL Query</label>
+            <textarea id="query-input" placeholder="Enter your SQL query..." rows="6"></textarea>
+            <button id="execute-btn" type="button">Execute</button>
+        </section>
+
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" hidden>
+            <span aria-live="polite">Executing query…</span>
+        </div>
+
+        <!-- Error Display -->
+        <div id="error-display" role="alert" hidden></div>
+
+        <!-- Results Panel -->
+        <section id="results-panel" aria-label="Query Results">
+            <div id="results-header">
+                <h2>Results</h2>
+                <span id="row-count"></span>
+                <div id="export-buttons" hidden>
+                    <button id="export-csv-btn" type="button">Export CSV</button>
+                    <button id="export-json-btn" type="button">Export JSON</button>
+                </div>
+            </div>
+            <p id="no-results" hidden>No results returned.</p>
+            <table id="results-table">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,14 +1,15 @@
 # AWS Athena Query Tool
 
-A Python command-line tool for executing SQL queries against AWS Athena and displaying results in ASCII table format or writing them to CSV/JSON files.
+A Python tool for executing SQL queries against AWS Athena. Available as both a CLI and a browser-based web UI.
 
 ## Features
 
 - Execute SQL queries against AWS Athena
-- Display results in ASCII table format
+- Display results in ASCII table format (CLI) or interactive table (Web UI)
 - Export results to CSV or JSON files
 - Flexible AWS authentication (environment variables, profiles, IAM roles)
 - Automatic retry logic for transient failures
+- Query result caching
 - YAML-based configuration
 
 ## Installation
@@ -17,17 +18,42 @@ A Python command-line tool for executing SQL queries against AWS Athena and disp
 pip install -r requirements.txt
 ```
 
-## Usage
+## CLI Usage
+
+Run queries defined in your config file:
 
 ```bash
 ./athena-query config.yaml
 ```
 
-Or with debug logging:
+With debug logging:
 
 ```bash
 ./athena-query config.yaml --debug
 ```
+
+The CLI executes all queries listed in the configuration file and outputs results based on the `output.format` setting (table, csv, or json).
+
+## Web UI Usage
+
+Start the web server:
+
+```bash
+python -m athena_query_tool.web_cli
+```
+
+With a custom config file:
+
+```bash
+python -m athena_query_tool.web_cli --config path/to/config.yaml
+```
+
+Then open `http://127.0.0.1:5000` in your browser. The web UI lets you:
+
+- View the active AWS region, database, and workgroup
+- Write and execute SQL queries interactively
+- Browse results in a table
+- Export results as CSV or JSON downloads
 
 ## Configuration
 
