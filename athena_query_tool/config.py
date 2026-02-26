@@ -44,6 +44,7 @@ class QueryConfig:
     """Query configuration."""
     name: str
     sql: str
+    skip: bool = False
 
 
 @dataclass
@@ -236,6 +237,10 @@ class ConfigurationManager:
             if not sql or not isinstance(sql, str):
                 raise ConfigurationError(f"Query at index {i}: field 'sql' must be a non-empty string")
             
-            queries.append(QueryConfig(name=name, sql=sql))
+            skip = query_data.get('skip', False)
+            if not isinstance(skip, bool):
+                raise ConfigurationError(f"Query at index {i}: field 'skip' must be a boolean")
+
+            queries.append(QueryConfig(name=name, sql=sql, skip=skip))
         
         return queries

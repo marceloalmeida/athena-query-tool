@@ -833,3 +833,78 @@ queries:
             assert invalid_format in str(exc_info.value)
         finally:
             os.unlink(temp_path)
+
+
+def test_query_config_skip_default():
+    """Test QueryConfig skip defaults to False."""
+    query_config = QueryConfig(name="test", sql="SELECT 1")
+    assert query_config.skip is False
+
+
+def test_query_config_skip_true():
+    """Test QueryConfig with skip set to True."""
+    query_config = QueryConfig(name="test", sql="SELECT 1", skip=True)
+    assert query_config.skip is True
+
+
+def test_load_config_with_skip():
+    """Test configuration loading with skip field on queries."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+queries:
+  - name: query1
+    sql: SELECT 1
+    skip: true
+  - name: query2
+    sql: SELECT 2
+  - name: query3
+    sql: SELECT 3
+    skip: false
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+
+    try:
+        config = ConfigurationManager.load_config(temp_path)
+
+        assert len(config.queries) == 3
+        assert config.queries[0].name == "query1"
+        assert config.queries[0].skip is True
+        assert config.queries[1].name == "query2"
+        assert config.queries[1].skip is False
+        assert config.queries[2].name == "query3"
+        assert config.queries[2].skip is False
+    finally:
+        os.unlink(temp_path)
+
+
+def test_load_config_skip_not_boolean():
+    """Test error handling when skip field is not a boolean."""
+    config_content = """
+athena:
+  database: test_db
+  workgroup: test_wg
+  output_location: s3://test-bucket/results/
+
+queries:
+  - name: query1
+    sql: SELECT 1
+    skip: "yes"
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        f.write(config_content)
+        temp_path = f.name
+
+    try:
+        with pytest.raises(ConfigurationError) as exc_info:
+            ConfigurationManager.load_config(temp_path)
+
+        assert "skip" in str(exc_info.value).lower()
+        assert "boolean" in str(exc_info.value).lower()
+    finally:
+        os.unlink(temp_path)

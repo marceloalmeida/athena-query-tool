@@ -44,3 +44,4 @@ queries:
    - name: sample_query
      sql: |
        SELECT current_timestamp
+     # skip: true  # Set to true to skip this query

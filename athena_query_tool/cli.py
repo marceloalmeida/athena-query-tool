@@ -103,6 +103,9 @@ def main() -> int:
         
         # Loop through queries in configuration and execute each
         for i, query_config in enumerate(config.queries, 1):
+            if query_config.skip:
+                logger.info(f"Skipping query {i}/{len(config.queries)}: {query_config.name}")
+                continue
             logger.info(f"Executing query {i}/{len(config.queries)}: {query_config.name}")
             logger.debug(f"SQL: {query_config.sql}")
             
