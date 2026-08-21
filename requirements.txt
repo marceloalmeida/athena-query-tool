@@ -1,6 +1,6 @@
 boto3>=1.43.45
 PyYAML>=6.0.3
 tabulate>=0.10.0
-hypothesis>=6.156.4
+hypothesis>=6.165.10
 pytest>=9.1.1
 flask>=3.1.3
